@@ -76,6 +76,7 @@ def create_song():
     if "id" not in data or "title" not in data or "lyrics" not in data:
         return jsonify({"message": "Missing required fields"}), 400
     existing_song = db.songs.find_one({"id": data["id"]})
+    # if the id is already there, return 302 with the URL for the resource
     if existing_song:
         return jsonify({"message": f"song with id {data['id']} already present"}), 302
     result: InsertOneResult = db.songs.insert_one(data)

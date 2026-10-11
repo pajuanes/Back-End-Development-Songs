@@ -3,7 +3,7 @@ import os
 import json
 import pymongo
 from flask import jsonify, request, make_response, abort, url_for  # noqa; F401
-from pymongo import MongoClient
+from pymongo import MongoClient, ReturnDocument
 from bson import json_util
 from pymongo.errors import OperationFailure
 from pymongo.results import InsertOneResult
@@ -51,3 +51,60 @@ def parse_json(data):
 ######################################################################
 # INSERT CODE HERE
 ######################################################################
+
+@app.route("/health", methods=["GET"])
+def get_health():
+    return jsonify({"status": "OK"}), 200
+
+@app.route("/count", methods=["GET"])
+def get_count():
+    count = db.songs.count_documents({})
+    return jsonify({"count": count}), 200
+
+@app.route("/song/<int:id>", methods=["GET"])
+def get_song_by_id(id):
+    song = db.songs.find_one({"id": id})
+    if song is None:
+        return jsonify({"message": f"cancion con id {id} no encontrada"}), 404
+    return jsonify(parse_json(song)), 200
+
+@app.route("/song", methods=["POST"])
+def create_song():
+    data = request.get_json()
+    if not data:
+        return jsonify({"message": "No input data provided"}), 400
+    if "id" not in data or "title" not in data or "lyrics" not in data:
+        return jsonify({"message": "Missing required fields"}), 400
+    existing_song = db.songs.find_one({"id": data["id"]})
+    if existing_song:
+        return jsonify({"message": f"song with id {data['id']} already present"}), 302
+    result: InsertOneResult = db.songs.insert_one(data)
+    db.songs.find_one({"_id": result.inserted_id})
+    return jsonify({"inserted id": {"$oid": str(result.inserted_id)} }), 201
+
+@app.route("/song/<int:id>", methods=["PUT"])
+def update_song(id):
+    data = request.get_json()
+    if not data:
+        return jsonify({"message": "No input data provided"}), 400
+    if "title" not in data or "lyrics" not in data:
+        return jsonify({"message": "Missing required fields"}), 400
+    updated_song = db.songs.find_one_and_update(
+        {"id": id},
+        {"$set": {
+            "title": data["title"],
+            "lyrics": data["lyrics"]
+        }},
+        return_document=ReturnDocument.AFTER
+    )
+    if updated_song is None:
+        return jsonify({"message": f"song with id {id} not found"}), 404
+    return jsonify(json.loads(json_util.dumps(updated_song))), 200
+
+@app.route("/song/<int:id>", methods=["DELETE"])
+def delete_song(id):
+    deleted_count = db.songs.count_documents({"id": id})
+    if deleted_count == 0:
+        return jsonify({"message": f"song not found"}), 404
+    db.songs.delete_one({"id": id})
+    return "", 204
